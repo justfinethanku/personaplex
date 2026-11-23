@@ -86,6 +86,11 @@ def wrap_with_system_tags(text: str) -> str:
     return f"<system> {cleaned} <system>"
 
 
+# FLEET-335 Phase 2: lull rule for text notes (kind 5 messages).
+NOTE_LULL_S = 3.0
+NOTE_USER_QUIET_RMS = 0.004
+
+
 @dataclass
 class ServerState:
     mimi: MimiModel
@@ -168,7 +173,7 @@ class ServerState:
             else:
                 self.lm_gen.load_voice_prompt(voice_prompt_path)
         self.lm_gen.text_prompt_tokens = self.text_tokenizer.encode(wrap_with_system_tags(request.query["text_prompt"])) if len(request.query["text_prompt"]) > 0 else None
-        seed = int(request["seed"]) if "seed" in request.query else None
+        seed = int(request.query["seed"]) if "seed" in request.query else None
 
         async def recv_loop():
             nonlocal close
@@ -195,6 +200,11 @@ class ServerState:
                     if kind == 1:  # audio
                         payload = message[1:]
                         opus_reader.append_bytes(payload)
+                    elif kind == 5:  # FLEET-335 Phase 2: text note, fed at the next lull
+                        note = message[1:].decode("utf8", errors="replace").strip()
+                        if note:
+                            pending_notes.append(note)
+                            clog.log("info", f"note queued: {note[:80]}")
                     else:
                         clog.log("warning", f"unknown message kind {kind}")
             finally:
@@ -203,6 +213,11 @@ class ServerState:
 
         async def opus_loop():
             all_pcm_data = None
+            # FLEET-335 Phase 2: a queued note is fed when the model has said nothing and the
+            # user has been silent for NOTE_LULL_S. User audio keeps buffering meanwhile.
+            model_quiet_frames = 0
+            user_quiet_frames = 0
+            lull_frames = int(round(NOTE_LULL_S * self.lm_gen._frame_rate))
 
             while True:
                 if close:
@@ -219,6 +234,14 @@ class ServerState:
                     be = time.time()
                     chunk = all_pcm_data[: self.frame_size]
                     all_pcm_data = all_pcm_data[self.frame_size:]
+                    rms = float(np.sqrt(np.mean(np.square(chunk)))) if len(chunk) else 0.0
+                    user_quiet_frames = user_quiet_frames + 1 if rms < NOTE_USER_QUIET_RMS else 0
+                    if pending_notes and model_quiet_frames >= lull_frames and user_quiet_frames >= lull_frames:
+                        note_tokens = self.text_tokenizer.encode(wrap_with_system_tags(pending_notes.pop(0)))
+                        used = await self.lm_gen.step_text_note_async(note_tokens)
+                        clog.log("info", f"fed a {len(note_tokens)}-token note in {used} frames")
+                        model_quiet_frames = 0
+                        user_quiet_frames = 0
                     chunk = torch.from_numpy(chunk)
                     chunk = chunk.to(device=self.device)[None, None]
                     codes = self.mimi.encode(chunk)
@@ -233,6 +256,7 @@ class ServerState:
                         main_pcm = main_pcm.cpu()
                         opus_writer.append_pcm(main_pcm[0, 0].numpy())
                         text_token = tokens[0, 0, 0].item()
+                        model_quiet_frames = model_quiet_frames + 1 if text_token in (0, 3) else 0
                         if text_token not in (0, 3):
                             _text = self.text_tokenizer.id_to_piece(text_token)  # type: ignore
                             _text = _text.replace("▁", " ")
@@ -256,6 +280,7 @@ class ServerState:
         if len(request.query["voice_prompt"]) > 0:
             clog.log("info", f"voice prompt: {voice_prompt_path} (requested: {requested_voice_prompt_path})")
         close = False
+        pending_notes: list[str] = []
         async with self.lock:
             if seed is not None and seed != -1:
                 seed_all(seed)

@@ -33,6 +33,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
 from os.path import splitext
+import asyncio
 import logging
 import numpy as np
 import sys
@@ -1113,6 +1114,45 @@ class LMGen(StreamingModule[_LMGenState]):
         for _ in self._step_text_prompt_core():
             if is_alive is not None and not await is_alive():
                 break
+
+    def _step_text_note_core(self, note_tokens: list[int]) -> Iterator[None]:
+        """FLEET-335 Phase 2: feed a short text note between conversation frames.
+
+        Same frame recipe as the opening text prompt (zero agent audio, sine user
+        audio, one forced text token per 80 ms frame), then the same short silence
+        the opening prompt ends with. The caller picks a quiet moment and decides
+        what to do with the user audio that arrives meanwhile.
+        """
+        for note_token in note_tokens:
+            yield
+            self.step(
+                moshi_tokens=self._encode_zero_frame(),
+                text_token=note_token,
+                input_tokens=self._encode_sine_frame(),
+            )
+        for _ in range(self.audio_silence_frame_cnt):
+            yield
+            self.step(
+                moshi_tokens=self._encode_zero_frame(),
+                text_token=self.zero_text_code,
+                input_tokens=self._encode_sine_frame(),
+            )
+
+    def step_text_note(self, note_tokens: list[int]) -> int:
+        """Feed a text note now. Returns the number of model frames it used."""
+        frames = 0
+        for _ in self._step_text_note_core(note_tokens):
+            frames += 1
+        return frames
+
+    async def step_text_note_async(self, note_tokens: list[int], is_alive: Optional[Callable]=None) -> int:
+        frames = 0
+        for _ in self._step_text_note_core(note_tokens):
+            if is_alive is not None and not await is_alive():
+                break
+            await asyncio.sleep(0)  # let the send and receive loops run between frames
+            frames += 1
+        return frames
 
     async def step_system_prompts_async(self, mimi, is_alive: Optional[Callable]=None):
         await self._step_voice_prompt_async(mimi, is_alive)

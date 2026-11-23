@@ -46,3 +46,7 @@ The Spark has no capture device (`arecord -l` lists none). A first tap that star
 5. An unknown `voice_prompt` does not autostart. Connect stays, on NATF0.
 6. The page says to reconnect around 3.5 minutes.
 7. Stop the server when the call is over so the GPU is free.
+
+## Phase 2: notes during the call
+
+`fleet/phase2/` feeds a short text note into a running call (`LMGen.step_text_note`, server message kind 5). It lifts facts asked after minute 4, and it does not get minute 3 to 4 of 5 on all three seeds. See `fleet/phase2/results.md` and `fleet/phase2/README.md`.
