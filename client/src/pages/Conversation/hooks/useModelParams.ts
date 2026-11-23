@@ -10,6 +10,19 @@ export const DEFAULT_REPETITION_PENALTY_CONTEXT = 64;
 export const DEFAULT_REPETITION_PENALTY = 1.0;
 export const DEFAULT_TEXT_PROMPT = "You are a wise and friendly teacher. Answer questions or provide advice in a clear and engaging way.";
 export const DEFAULT_VOICE_PROMPT = "NATF0.pt";
+
+// A call link can open the queue with the prompt already filled in.
+// PersonaPlex otherwise takes the prompt only from this box, once, at connect.
+function prefillFromUrl(): { textPrompt?: string; voicePrompt?: string } {
+  if (typeof window === "undefined") return {};
+  const params = new URLSearchParams(window.location.search);
+  const text = params.get("text_prompt")?.trim();
+  const voice = params.get("voice_prompt")?.trim();
+  const out: { textPrompt?: string; voicePrompt?: string } = {};
+  if (text) out.textPrompt = text;
+  if (voice) out.voicePrompt = voice.endsWith(".pt") ? voice : `${voice}.pt`;
+  return out;
+}
 export const DEFAULT_RANDOM_SEED = -1;
 
 export type ModelParamsValues = {
@@ -36,8 +49,9 @@ export const useModelParams = (params?:useModelParamsArgs) => {
   const [padMult, setPadMultBase] = useState(params?.padMult || DEFAULT_PAD_MULT);
   const [repetitionPenalty, setRepetitionPenaltyBase] = useState(params?.repetitionPenalty || DEFAULT_REPETITION_PENALTY);
   const [repetitionPenaltyContext, setRepetitionPenaltyContextBase] = useState(params?.repetitionPenaltyContext || DEFAULT_REPETITION_PENALTY_CONTEXT);
-  const [textPrompt, setTextPromptBase] = useState(params?.textPrompt || DEFAULT_TEXT_PROMPT);
-  const [voicePrompt, setVoicePromptBase] = useState(params?.voicePrompt || DEFAULT_VOICE_PROMPT);
+  const prefill = prefillFromUrl();
+  const [textPrompt, setTextPromptBase] = useState(params?.textPrompt || prefill.textPrompt || DEFAULT_TEXT_PROMPT);
+  const [voicePrompt, setVoicePromptBase] = useState(params?.voicePrompt || prefill.voicePrompt || DEFAULT_VOICE_PROMPT);
   const [randomSeed, setRandomSeedBase] = useLocalStorage('randomSeed', params?.randomSeed || DEFAULT_RANDOM_SEED);
 
   const resetParams = useCallback(() => {
