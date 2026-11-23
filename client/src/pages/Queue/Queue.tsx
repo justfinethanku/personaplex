@@ -4,7 +4,7 @@ import eruda from "eruda";
 import { useSearchParams } from "react-router-dom";
 import { Conversation } from "../Conversation/Conversation";
 import { Button } from "../../components/Button/Button";
-import { useModelParams } from "../Conversation/hooks/useModelParams";
+import { DEFAULT_VOICE_PROMPT, useModelParams } from "../Conversation/hooks/useModelParams";
 import { env } from "../../env";
 import { prewarmDecoderWorker } from "../../decoder/decoderWorker";
 
@@ -191,14 +191,24 @@ export const Queue:FC = () => {
   }, [startProcessor, getMicrophoneAccess]);
 
   // A call link with ?autostart=1 should begin the conversation on that tap.
-  // The browser may still ask for the microphone; the Connect button stays.
+  // The URL voice has to be one of the picker presets. An unknown voice
+  // does not start; the Connect button stays, on a real preset.
   const autostarted = useRef(false);
   useEffect(() => {
     if (autostarted.current) return;
     if (searchParams.get("autostart") !== "1") return;
+    const raw = searchParams.get("voice_prompt")?.trim();
+    const voice = raw ? (raw.endsWith(".pt") ? raw : `${raw}.pt`) : null;
+    if (voice && !VOICE_OPTIONS.includes(voice)) {
+      autostarted.current = true;
+      if (!VOICE_OPTIONS.includes(modelParams.voicePrompt)) {
+        modelParams.setVoicePrompt(DEFAULT_VOICE_PROMPT);
+      }
+      return;
+    }
     autostarted.current = true;
     void startConnection();
-  }, [searchParams, startConnection]);
+  }, [searchParams, startConnection, modelParams.voicePrompt, modelParams.setVoicePrompt]);
 
   return (
     <>

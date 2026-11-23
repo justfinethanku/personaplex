@@ -17,7 +17,10 @@ from score import score_track  # noqa: E402
 
 def patterns_for(facts: dict) -> dict:
     def phrase(value: str) -> re.Pattern:
-        return re.compile(re.escape(value), re.IGNORECASE)
+        # Bound the phrase so "AI Cred" does not match "AI Credentials"
+        # and "Jon Jones" does not match a different name that merely overlaps.
+        body = re.escape(value)
+        return re.compile(rf"(?<![A-Za-z0-9]){body}(?![A-Za-z0-9])", re.IGNORECASE)
 
     return {name: phrase(value) for name, value in facts.items()}
 

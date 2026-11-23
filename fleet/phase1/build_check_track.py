@@ -24,14 +24,16 @@ CUES = [
     {"t": 80, "kind": "chat", "text": "What should the cold open be?"},
     {"t": 120, "kind": "chat", "text": "What do we cut if this runs long?"},
     {"t": 160, "kind": "chat", "text": "How should we end it?"},
-    # Twelve seconds apart. The model states a planted fact about 1.5 s
-    # after the question, and a 50-word prompt is still inside the
-    # 3000-frame window at 3:48.
-    {"t": 180, "kind": "fact", "fact": "name", "text": "What's your name again?"},
-    {"t": 192, "kind": "fact", "fact": "employer", "text": "Who do you work for?"},
-    {"t": 204, "kind": "fact", "fact": "desk", "text": "Which page on the site is this story from?"},
-    {"t": 216, "kind": "fact", "fact": "story", "text": "Which company is today's story about?"},
-    {"t": 228, "kind": "fact", "fact": "company", "text": "What did he co-found with Nate?"},
+    # One window around minute 3, ten seconds apart:
+    # 2:54 name, 3:04 employer, 3:14 page, 3:24 story, 3:34 company.
+    # The closing line at 3:44 ends the last answer window. Clips are
+    # about three seconds, so these starts do not overlap.
+    {"t": 174, "kind": "fact", "fact": "name", "text": "What's your name again?"},
+    {"t": 184, "kind": "fact", "fact": "employer", "text": "Who do you work for?"},
+    {"t": 194, "kind": "fact", "fact": "desk", "text": "Which page on the site is this story from?"},
+    {"t": 204, "kind": "fact", "fact": "story", "text": "Which company is today's story about?"},
+    {"t": 214, "kind": "fact", "fact": "company", "text": "What did he co-found with Nate?"},
+    {"t": 224, "kind": "chat", "text": "Thanks, that covers the checklist."},
 ]
 
 
@@ -63,13 +65,18 @@ async def main() -> None:
     for index, cue in enumerate(CUES):
         wav_path = clip_dir / f"{index:02d}.wav"
         mp3_path = clip_dir / f"{index:02d}.mp3"
-        if wav_path.exists():
+        # The cache key is the spoken text, not the index. A new question
+        # at the same slot must be synthesized again.
+        key_path = clip_dir / f"{index:02d}.txt"
+        cached = key_path.exists() and key_path.read_text() == cue["text"] and wav_path.exists()
+        if cached:
             with wave.open(str(wav_path), "rb") as handle:
                 frames = handle.readframes(handle.getnframes())
             audio = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
         else:
             await synthesize(cue["text"], mp3_path)
             audio = to_wav(mp3_path, wav_path)
+            key_path.write_text(cue["text"])
         start = int(round(cue["t"] * SR))
         end = min(start + len(audio), len(canvas))
         if np.any(canvas[start:end] != 0):
