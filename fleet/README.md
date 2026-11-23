@@ -4,7 +4,7 @@ Phase 0 measured how long a planted role prompt stays accurate. Phase 1 builds a
 
 The word cap is 50. Minute 1 and minute 3 were right in 6 of 6 runs at 50, 150, and 400 words. Longer prompts did not raise that score. They added startup silence, and after 4:30 they scored worse. See `phase0/table.md`.
 
-A 50-word prompt takes about 13 seconds to feed (voice prompt, then one text token per 80 ms). That misses the 10-second start in the issue. A 150-word prompt takes about 26 seconds. A 400-word prompt takes about 67 seconds.
+A 50-word prompt takes about 13 seconds to feed (voice prompt, then one text token per 80 ms). That exceeds the spec's 10-second startup target before browser overhead. A 150-word prompt takes about 26 seconds. A 400-word prompt takes about 67 seconds.
 
 The launcher should say to reconnect around 3.5 minutes. By 4:30 the show name was right in 2 of 6 runs at 50 words, and in 0 of 6 at 150 and 400. Employer and guest were gone by 6:00.
 
@@ -15,7 +15,7 @@ Phase 1, three offline calls, voice NATF2, seeds 101, 202, and 303. A narrative 
 From the PersonaPlex venv, with the GPU free of other heavy jobs:
 
 ```
-python fleet/phase0/build_user_track.py
+python fleet/phase0/build_user_track.py --out .
 python fleet/phase0/run_drift.py --track user_track.wav --out runs
 python fleet/phase0/score_runs.py --runs runs --manifest user_track.json --out runs
 ```

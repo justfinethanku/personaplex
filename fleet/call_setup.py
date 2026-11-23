@@ -4,7 +4,7 @@ The web client does not read a prompt from the address on its own.
 This script writes the prompt, checks that five facts are actually in it,
 and writes producer.html with one link that opens the queue already filled in.
 
-Claude is Sonnet 5.5 through OpenRouter (fleet secret OPENROUTER_API_KEY).
+Claude is Sonnet 4.6 through OpenRouter (fleet secret OPENROUTER_API_KEY).
 A short role prompt does not need a larger model. The key stays in the
 fleet vault; this script never writes it down.
 """
