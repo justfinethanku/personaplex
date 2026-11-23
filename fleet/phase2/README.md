@@ -12,6 +12,9 @@ Results and the tables are in `results.md`. Read that first.
   - `--note-mode pause`: the user track waits while the note is fed, with sine and silence frames like the opening prompt.
   - `--note-mode stealth`: the note rides on the real user frames. No pause, no sine, no trailing silence.
   - `--first-s`, `--every-s`, `--lull-s`: when a note is due and how long both sides must be quiet.
+  - `--last-note-s`: no note after this time. For matched controls.
+- `fleet/phase2/adjudicate.py`: the one answer rubric, applied to every saved transcript. Writes `adjudicated.md`.
+- `fleet/phase2/overlap.py`: where each note landed against the five questions. Writes `overlap.md`.
 - `fleet/phase2/compare.py`: the 8-minute A/B table (no notes against notes).
 - `fleet/phase2/note_client.py`: sends one note to a running server over the websocket, no microphone needed. Used for the server round trip.
 - `fleet/phase2/scripts/`: the exact batch scripts used, one seed per GPU-lock hold.
@@ -32,8 +35,11 @@ python fleet/phase1/score_calls.py --runs <dir> --manifest <check_track.json> --
 
 ## Caveats
 
+- Read `results.md` first. Round 3 re-scored every answer with one rubric and narrowed the causal claims.
 - A note costs compute: 37 tokens took about 4.2 s in pause mode and about 3.8 s in stealth mode. The user hears nothing from the model during that time.
 - After a pause-mode note the model often greets again ("Hello, you're through to ..."). After a stealth note it often says "Hey, let me know if you have any questions." Either one is audible. Nothing here suppresses it.
-- A note that starts as the user begins a question corrupts that answer. The lull gate looks at the silence before the note, not at what comes next.
+- A stealth note that overlapped a question replaced the answer with a greeting in 3 of 3 calls, and a matched control on seed 303 shows the answer returns without the note. The lull gate looks at the silence before the note, not at what comes next.
+- Seed 202 does not reach 4 of 5 in any arm, and removing the fourth note does not change it. The cause is not identified.
 - The server patch was exercised once with a silent client (`note_client.py`). It queued the note, fed 25 tokens in 31 frames, and the session stayed up. It was not run with a real microphone.
+- Upstream `main` (`16419a2`, Nov 5 2026) pins the system prompt in the KV cache and prefills it in one pass. This branch is based on the older `3428dfd` and does not use it.
 - Not merged. Nothing is wired into the launcher.

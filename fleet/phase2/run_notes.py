@@ -115,6 +115,8 @@ def run_one(stack, prompt, note, voice, seed, user_pcm, out_wav, out_json, cfg) 
                         )
                     pending = False
                     next_due_s = t + cfg["every_s"]
+                    if cfg["last_note_s"] and next_due_s > cfg["last_note_s"]:
+                        next_due_s = None  # matched control: no note after this time
                     pad_run = 0
                     user_quiet_run = 0
                 step_in = user_encoded[:, :, c : c + 1]
@@ -192,6 +194,8 @@ def main() -> None:
     parser.add_argument("--first-s", type=float, default=30.0)
     parser.add_argument("--every-s", type=float, default=60.0)
     parser.add_argument("--lull-s", type=float, default=3.0)
+    parser.add_argument("--last-note-s", type=float, default=0.0,
+                        help="No note is due after this many seconds of call time (0 = no limit). For matched controls.")
     parser.add_argument("--note-mode", choices=("pause", "stealth"), default="pause",
                         help="pause: the user track waits while the note is fed, with sine and silence frames like the opening prompt. "
                              "stealth: the note rides on the real user frames, no pause and no sine or silence frames.")
@@ -210,7 +214,7 @@ def main() -> None:
     user = lm_load_audio(str(args.track), model_sr)
     prompt = args.prompt_file.read_text().strip()
     note = args.note_file.read_text().strip() if args.note_file else ""
-    cfg = {"first_s": args.first_s, "every_s": args.every_s, "lull_s": args.lull_s, "mode": args.note_mode}
+    cfg = {"first_s": args.first_s, "every_s": args.every_s, "lull_s": args.lull_s, "mode": args.note_mode, "last_note_s": args.last_note_s}
     print(f"user_samples={user.shape[-1]} note_words={len(note.split())} cfg={cfg}", flush=True)
 
     args.out.mkdir(parents=True, exist_ok=True)
