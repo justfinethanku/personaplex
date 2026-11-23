@@ -16,13 +16,20 @@ The five fact cues sit at 2:54, 3:04, 3:14, 3:24, and 3:34. A closing line at 3:
 
 From the PersonaPlex venv, with the GPU free of other heavy jobs:
 
+`run_drift.py` loads the model once. It refuses to start when memory available is under 28 GB or when a GPU process other than ComfyUI, the remote-desktop daemon, or itself is present.
+
+The harness passes `prefill_system_prompt=True` and `pin_system_prompt=True` into `LMGen`. That class defaults both off, so a run that omitted them would still use the sliding window. `--no-prefill-system-prompt` and `--no-pin-system-prompt` turn them off for a same-revision control. `--max-pinned-frames` defaults to 640 because a 400-word prompt is about 558 frames and the server's 512 cap cannot pin it. Each `drift.jsonl` row records the git revision and those flags.
+
+Run it on this checkout's `moshi`, not the venv copy (that copy is the older install and has no pin arguments). `env.sh` changes directory to the install clone, so change back to this checkout after sourcing it.
+
 ```
+source ~/clients/LEJ/personaplex/env.sh
+cd <this checkout>
+export PYTHONPATH="$PWD/moshi${PYTHONPATH:+:$PYTHONPATH}"
 python fleet/phase0/build_user_track.py --out .
 python fleet/phase0/run_drift.py --track user_track.wav --out runs
 python fleet/phase0/score_runs.py --runs runs --manifest user_track.json --out runs
 ```
-
-`run_drift.py` loads the model once. It refuses to start when memory available is under 28 GB or when a GPU process other than ComfyUI, the remote-desktop daemon, or itself is present.
 
 ## Build a call
 

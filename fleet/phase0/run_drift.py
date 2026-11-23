@@ -103,7 +103,20 @@ def preflight() -> None:
     print("gpu preflight ok; leaving idle ComfyUI servers running", flush=True)
 
 
-def load_stack(voice_dir: Path):
+def git_revision() -> str:
+    import subprocess
+
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=Path(__file__).resolve().parents[2],
+            text=True,
+        ).strip()
+    except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+        return "unknown"
+
+
+def load_stack(voice_dir: Path, prefill: bool, pin: bool, max_pinned_frames: int):
     preflight()
     device = "cuda"
     repo = loaders.DEFAULT_REPO
@@ -121,6 +134,8 @@ def load_stack(voice_dir: Path):
     lm = loaders.get_moshi_lm(moshi_weight, device=device)
     lm.eval()
     frame_size = int(mimi.sample_rate / mimi.frame_rate)
+    # LMGen defaults both flags off. The server and offline entry points default
+    # them on. This harness has to pass them itself or the drift run never pins.
     lm_gen = LMGen(
         lm,
         audio_silence_frame_cnt=int(0.5 * mimi.frame_rate),
@@ -133,6 +148,9 @@ def load_stack(voice_dir: Path):
         temp_text=0.7,
         top_k=250,
         top_k_text=25,
+        prefill_system_prompt=prefill,
+        pin_system_prompt=pin,
+        max_pinned_frames=max_pinned_frames,
     )
     mimi.streaming_forever(1)
     other_mimi.streaming_forever(1)
@@ -176,6 +194,7 @@ def run_one(stack, prompt: str, voice: str, seed: int, user_pcm: np.ndarray, out
     torch.cuda.synchronize()
     startup_s = time.perf_counter() - t0
     mimi.reset_streaming()
+    prompt_frames = int(getattr(lm_gen, "system_prompt_frames", 0))
 
     frame_rate = float(mimi.frame_rate)
     events = []
@@ -224,6 +243,7 @@ def run_one(stack, prompt: str, voice: str, seed: int, user_pcm: np.ndarray, out
     return {
         "startup_s": round(startup_s, 3),
         "prompt_tokens": len(tokens),
+        "prompt_frames": prompt_frames,
         "text_feed_s_nominal": round(len(tokens) / frame_rate, 3),
         "generate_s": round(gen_s, 3),
         "audio_s": round(audio_s, 3),
@@ -254,6 +274,14 @@ def main() -> None:
     parser.add_argument("--prompt-file", type=Path, default=None, help="Use this text for every run instead of the planted prompts.")
     parser.add_argument("--max-audio-seconds", type=float, default=0)
     parser.add_argument("--voice-dir", type=Path, default=None)
+    # Explicit on. LMGen's own defaults are off, so omitting these would
+    # measure the old sliding window even on a revision that can pin.
+    parser.add_argument("--prefill-system-prompt", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--pin-system-prompt", action=argparse.BooleanOptionalAction, default=True)
+    # 512 is the server default. A 400-word planted prompt is about 558 frames
+    # (51 voice + 12 silence + the text tokens) and does not fit. 640 covers
+    # that matrix. Context is 2048, so the conversation window still slides.
+    parser.add_argument("--max-pinned-frames", type=int, default=640)
     args = parser.parse_args()
 
     os.environ.setdefault("TRITON_PTXAS_PATH", "/usr/local/cuda/bin/ptxas")
@@ -267,7 +295,24 @@ def main() -> None:
         user = user[:, :keep]
     print(f"user_samples={user.shape[-1]} voice_dir={voice_dir}", flush=True)
 
-    stack = load_stack(voice_dir)
+    revision = git_revision()
+    flags = {
+        "revision": revision,
+        "prefill_system_prompt": bool(args.prefill_system_prompt),
+        "pin_system_prompt": bool(args.pin_system_prompt),
+        "max_pinned_frames": int(args.max_pinned_frames),
+    }
+    print(
+        "revision={revision} prefill_system_prompt={prefill_system_prompt} "
+        "pin_system_prompt={pin_system_prompt} max_pinned_frames={max_pinned_frames}".format(**flags),
+        flush=True,
+    )
+    stack = load_stack(
+        voice_dir,
+        flags["prefill_system_prompt"],
+        flags["pin_system_prompt"],
+        flags["max_pinned_frames"],
+    )
     # Resample note: load_audio already resampled to the rate we passed.
     # The model rate is mimi.sample_rate. Reload at the model rate.
     model_sr = int(stack["mimi"].sample_rate)
@@ -302,16 +347,25 @@ def main() -> None:
                 "seed": seed,
                 "ok": True,
                 "wall_s": round(time.perf_counter() - t0, 3),
+                **flags,
                 **meta,
             }
         except torch.cuda.OutOfMemoryError as exc:
-            row = {"tag": tag, "ok": False, "error": f"oom: {exc}"}
+            row = {"tag": tag, "ok": False, "error": f"oom: {exc}", **flags}
             print(f"OOM {tag}: {exc}", flush=True)
             with log_path.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(row) + "\n")
             raise SystemExit(2) from exc
         except Exception as exc:  # one bad seed should not hide the rest
-            row = {"tag": tag, "length": length, "voice": voice, "seed": seed, "ok": False, "error": str(exc)}
+            row = {
+                "tag": tag,
+                "length": length,
+                "voice": voice,
+                "seed": seed,
+                "ok": False,
+                "error": str(exc),
+                **flags,
+            }
             print(f"FAIL {tag}: {exc}", flush=True)
         with log_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(row) + "\n")
