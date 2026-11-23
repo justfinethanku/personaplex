@@ -4,9 +4,10 @@ The web client does not read a prompt from the address on its own.
 This script writes the prompt, checks that five facts are actually in it,
 and writes producer.html with one link that opens the queue already filled in.
 
-Claude is Sonnet 4.6 through OpenRouter (fleet secret OPENROUTER_API_KEY).
-A short role prompt does not need a larger model. The key stays in the
-fleet vault; this script never writes it down.
+The delivered prompt is six short sentences from the sourced facts.
+Phase 0's word cap is a hard limit on that path. Claude (Sonnet 4.6
+through OpenRouter) and the older narrative template are experiment
+flags only. The key stays in the fleet vault; this script never writes it down.
 """
 
 from __future__ import annotations
@@ -28,8 +29,6 @@ ORIGIN = "https://spark-3368.tail6e7cfb.ts.net:8998/"
 # Sonnet 5.5 spends a short budget on reasoning and returns content=null.
 # This squeeze is a word cap over facts we already filtered, so 4.6 is enough.
 MODEL = "anthropic/claude-sonnet-4.6"
-# Phase 0 sets the useful length. 120 is the stand-in until that table exists.
-DEFAULT_WORDS = 120
 VOICE = "NATF2.pt"
 FLEET_SQL = Path.home() / ".claude/skills/fleet-context/scripts/fleet-sql"
 
@@ -264,9 +263,39 @@ person facts, project_context, and the graph.</p>
     path.write_text(page)
 
 
+def phase0_word_cap() -> int:
+    """The length Phase 0 showed still holds at minute 3. Hard limit for the delivered path."""
+    summary = Path(__file__).resolve().parent / "phase0" / "drift_summary.json"
+    if summary.exists():
+        cap = json.loads(summary.read_text()).get("word_cap")
+        if isinstance(cap, int) and cap > 0:
+            return cap
+    return 50
+
+
+def spoken_prompt(facts: dict) -> str:
+    """The prompt the launcher ships. Each sourced fact is its own sentence.
+
+    The page is its own sentence. The story names its company twice so
+    a later company fact is not substituted for it. The company name is
+    spoken again where the co-founder is stated.
+    """
+    return (
+        f"Your name is {facts['name']}. "
+        f"You work for {facts['employer']}. "
+        f"The page is called {facts['desk']}. "
+        f"Today's story is about {facts['story']}. "
+        f"The company in the story is {facts['story']}. "
+        f"{facts['company']} is Jon's company. "
+        f"Jon co-founded {facts['company']} with Nate Jones."
+    )
+
+
 def direct_prompt(facts: dict) -> str:
-    """Say each fact as its own sentence. A narrative squeeze kept the phrases
-    but the voice model did not answer with them."""
+    """Experiment only. The 48-word template from the first Phase 1 pass.
+
+    It scored 4, 4, and 3. The delivered path is spoken_prompt.
+    """
     return (
         f"Your name is {facts['name']}. "
         f"You work for {facts['employer']}. "
@@ -280,14 +309,28 @@ def direct_prompt(facts: dict) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--words", type=int, default=DEFAULT_WORDS)
-    parser.add_argument("--topic", default="", help="Unused override kept for the spec's call-type interface.")
+    parser.add_argument(
+        "--words",
+        type=int,
+        default=None,
+        help="Word cap. The delivered path cannot go above the Phase 0 cap.",
+    )
+    parser.add_argument(
+        "--topic",
+        default="",
+        help="Episode topic. Replaces the News Factory story keyword in the spoken prompt.",
+    )
     parser.add_argument("--type", default="producer")
     parser.add_argument("--sources-only", action="store_true")
     parser.add_argument(
+        "--squeeze",
+        action="store_true",
+        help="Experiment: ask Claude to write the prompt. Not the delivered path.",
+    )
+    parser.add_argument(
         "--direct",
         action="store_true",
-        help="State each fact as its own sentence instead of asking Claude to paraphrase.",
+        help="Experiment: the earlier 48-word template. Not the delivered path.",
     )
     parser.add_argument(
         "--out",
@@ -297,20 +340,41 @@ def main() -> None:
     args = parser.parse_args()
     if args.type != "producer":
         raise SystemExit("only the producer call is built in this job")
+    if args.squeeze and args.direct:
+        raise SystemExit("pick one experiment: --squeeze or --direct")
+    phase_cap = phase0_word_cap()
+    experiment = bool(args.squeeze or args.direct)
+    if not experiment and args.words is not None and args.words > phase_cap:
+        raise SystemExit(
+            f"the delivered path is capped at {phase_cap} words from Phase 0. "
+            "--squeeze and --direct are experiment inputs."
+        )
+    cap = phase_cap if args.words is None else args.words
     bundle = sources()
-    if args.topic:
-        bundle["topic_override"] = args.topic
+    topic = args.topic.strip()
+    if topic:
+        # The requested topic is the story the episode is about.
+        bundle["facts"]["story"] = topic
+        bundle["topic"] = topic
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "sources.json").write_text(json.dumps(bundle, indent=2))
     print("sources", args.out / "sources.json")
     print("facts", json.dumps(bundle["facts"]))
     if args.sources_only:
         return
-    prompt = direct_prompt(bundle["facts"]) if args.direct else squeeze(bundle, args.words)
-    missing = [v for v in bundle["facts"].values() if v not in prompt]
-    if missing and not args.direct:
-        prompt = squeeze(bundle, args.words)
+    if args.direct:
+        prompt = direct_prompt(bundle["facts"])
+        builder = "direct"
+    elif args.squeeze:
+        prompt = squeeze(bundle, cap)
         missing = [v for v in bundle["facts"].values() if v not in prompt]
+        if missing:
+            prompt = squeeze(bundle, cap)
+        builder = MODEL
+    else:
+        prompt = spoken_prompt(bundle["facts"])
+        builder = "spoken"
+    missing = [v for v in bundle["facts"].values() if v not in prompt]
     if missing or "if asked" in prompt.lower():
         raise SystemExit(f"prompt is missing facts or hides them: {missing}\n---\n{prompt}")
     opening = " ".join(prompt.split()[:40]).lower()
@@ -318,8 +382,8 @@ def main() -> None:
         if phrase not in opening:
             raise SystemExit(f"opening does not state {phrase!r}\n---\n{prompt}")
     count = len(prompt.split())
-    if count > args.words + 15:
-        raise SystemExit(f"prompt is {count} words, cap is {args.words}")
+    if count > cap:
+        raise SystemExit(f"prompt is {count} words, cap is {cap}")
     url = call_url(prompt)
     if len(url) > 7000:
         raise SystemExit(f"call url is {len(url)} chars; the server line limit is 8190")
@@ -331,9 +395,11 @@ def main() -> None:
         note = "Reconnect note is filled in after the Phase 0 drift table."
     record = {
         "built_at": datetime.now(timezone.utc).isoformat(),
-        "model": "direct" if args.direct else MODEL,
+        "model": builder,
         "words": count,
-        "word_cap": args.words,
+        "word_cap": cap,
+        "phase0_word_cap": phase_cap,
+        "topic": topic,
         "voice": VOICE,
         "prompt": prompt,
         "facts": bundle["facts"],
