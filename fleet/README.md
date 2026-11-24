@@ -2,6 +2,8 @@
 
 Phase 0 measured how long a planted role prompt stays accurate. Phase 1 builds a podcast-producer prompt from the fleet databases and opens the web client with it.
 
+The paragraphs below are the unpinned baseline, from before this branch turned prompt pinning on. The pinned retest, the same-revision flags-off control, and the warmed-server timing are in `phase0/pin-retest.md`.
+
 The word cap is 50. Minute 1 and minute 3 were right in 6 of 6 runs at 50, 150, and 400 words. Longer prompts did not raise that score. They added startup silence, and after 4:30 they scored worse. See `phase0/table.md`.
 
 A 50-word prompt takes about 13 seconds to feed (voice prompt, then one text token per 80 ms). That exceeds the spec's 10-second startup target before browser overhead. A 150-word prompt takes about 26 seconds. A 400-word prompt takes about 67 seconds.
@@ -44,7 +46,7 @@ The client reads `text_prompt` and `voice_prompt` from the page URL. The server 
 
 ## Live tap
 
-The Spark has no capture device (`arecord -l` lists none). A first tap that starts an audible conversation needs a person and a microphone. That call was not made, so the live start time was not measured. The offline prompt feed for the delivered prompt is about 13 seconds.
+The Spark has no capture device (`arecord -l` lists the header and no devices). A first tap that starts an audible conversation needs a person and a microphone. That call was not made. On a warmed server from this checkout, a websocket silence frame reached first audio in 0.145 seconds. The numbers are in `phase0/pin-retest.md`.
 
 1. The GPU must be free of a fish-speech restart or a video-lab render. ComfyUI on ports 8191 and 8192 can stay up.
 2. `~/clients/LEJ/personaplex/start-server.sh`
