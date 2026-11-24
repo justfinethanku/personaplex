@@ -1,0 +1,71 @@
+{
+  "word_cap": 50,
+  "minute1": {
+    "50": {
+      "right": 6,
+      "wrong": 0,
+      "dodged": 0,
+      "n": 6
+    },
+    "150": {
+      "right": 6,
+      "wrong": 0,
+      "dodged": 0,
+      "n": 6
+    },
+    "400": {
+      "right": 6,
+      "wrong": 0,
+      "dodged": 0,
+      "n": 6
+    }
+  },
+  "minute3": {
+    "50": {
+      "right": 6,
+      "wrong": 0,
+      "dodged": 0,
+      "n": 6
+    },
+    "150": {
+      "right": 6,
+      "wrong": 0,
+      "dodged": 0,
+      "n": 6
+    },
+    "400": {
+      "right": 6,
+      "wrong": 0,
+      "dodged": 0,
+      "n": 6
+    }
+  },
+  "startup": {
+    "50": {
+      "n": 6,
+      "tokens_mean": 67.0,
+      "startup_mean_s": 12.68,
+      "startup_min_s": 12.47,
+      "startup_max_s": 13.15,
+      "rtf_mean": 1.391
+    },
+    "150": {
+      "n": 6,
+      "tokens_mean": 191.0,
+      "startup_mean_s": 26.37,
+      "startup_min_s": 25.81,
+      "startup_max_s": 27.48,
+      "rtf_mean": 1.458
+    },
+    "400": {
+      "n": 6,
+      "tokens_mean": 495.0,
+      "startup_mean_s": 66.8,
+      "startup_min_s": 56.55,
+      "startup_max_s": 111.12,
+      "rtf_mean": 1.803
+    }
+  },
+  "reconnect_note": "Phase 0: fact accuracy drops as the call runs. Reconnect with a fresh prompt around 3.5 minutes.",
+  "runs_ok": 18
+}

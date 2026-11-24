@@ -4,7 +4,7 @@ import eruda from "eruda";
 import { useSearchParams } from "react-router-dom";
 import { Conversation } from "../Conversation/Conversation";
 import { Button } from "../../components/Button/Button";
-import { useModelParams } from "../Conversation/hooks/useModelParams";
+import { DEFAULT_VOICE_PROMPT, useModelParams } from "../Conversation/hooks/useModelParams";
 import { env } from "../../env";
 import { prewarmDecoderWorker } from "../../decoder/decoderWorker";
 
@@ -86,10 +86,10 @@ const Homepage = ({
             onChange={(e) => setTextPrompt(e.target.value)}
             className="w-full h-32 min-h-[80px] max-h-64 p-3 bg-white text-black border border-gray-300 rounded resize-y focus:outline-none focus:ring-2 focus:ring-[#76b900] focus:border-transparent"
             placeholder="Enter your text prompt..."
-            maxLength={1000}
+            maxLength={4000}
           />
           <div className="text-right text-xs text-gray-500 mt-1">
-            {textPrompt.length}/1000
+            {textPrompt.length}/4000
           </div>
         </div>
 
@@ -189,6 +189,26 @@ export const Queue:FC = () => {
       // Values are already set in modelParams, they get passed to Conversation
     }
   }, [startProcessor, getMicrophoneAccess]);
+
+  // A call link with ?autostart=1 should begin the conversation on that tap.
+  // The URL voice has to be one of the picker presets. An unknown voice
+  // does not start; the Connect button stays, on a real preset.
+  const autostarted = useRef(false);
+  useEffect(() => {
+    if (autostarted.current) return;
+    if (searchParams.get("autostart") !== "1") return;
+    const raw = searchParams.get("voice_prompt")?.trim();
+    const voice = raw ? (raw.endsWith(".pt") ? raw : `${raw}.pt`) : null;
+    if (voice && !VOICE_OPTIONS.includes(voice)) {
+      autostarted.current = true;
+      if (!VOICE_OPTIONS.includes(modelParams.voicePrompt)) {
+        modelParams.setVoicePrompt(DEFAULT_VOICE_PROMPT);
+      }
+      return;
+    }
+    autostarted.current = true;
+    void startConnection();
+  }, [searchParams, startConnection, modelParams.voicePrompt, modelParams.setVoicePrompt]);
 
   return (
     <>
